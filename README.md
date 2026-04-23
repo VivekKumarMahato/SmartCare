@@ -1,4 +1,4 @@
-# SmartCare - Blood Bank Management System
+# SmartCare - Blood Donation Management System
 
 ## 🚀 Overview
 
