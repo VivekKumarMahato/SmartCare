@@ -1,7 +1,5 @@
 from passlib.context import CryptContext
-from jose import jwt
 from datetime import datetime, timedelta
-from app.core.config import SECRET_KEY, ALGORITHM
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
@@ -31,6 +29,8 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
 
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type")!= "access":
+            raise HTTPException(status_code=401, detail="Invalid token type")
         return payload
     except:
         raise HTTPException(status_code=401, detail="Invalid token")

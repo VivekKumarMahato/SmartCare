@@ -1,19 +1,16 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
 from app.models.donor import Donor
 from app.schemas.donor import DonorCreate
 from app.core.security import get_current_user
-
+from sqlalchemy.exc import IntegrityError
+from app.services.donor import create_donor_profile
+from app.db.dependencies import get_db
 router = APIRouter()
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+
 
 
 @router.post("/create")
@@ -22,13 +19,6 @@ def create_donor(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    new_donor = Donor(
-        user_id=current_user["user_id"],
-        blood_group=donor.blood_group,
-        location=donor.location
-    )
-
-    db.add(new_donor)
-    db.commit()
+    new_donor = create_donor_profile(db, current_user, donor)
 
     return {"message": "Donor profile created"}

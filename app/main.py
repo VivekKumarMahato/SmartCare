@@ -4,7 +4,7 @@ from app.api.v1.routes.user import router as user_router
 from app.api.v1.routes.donor import router as donor_router
 from app.api.v1.routes import user
 from app.api.v1.routes import blood_request
-
+from fastapi.middleware.cors import CORSMiddleware
 
 Base.metadata.create_all(bind=engine)
 
@@ -26,4 +26,12 @@ app.include_router(
     blood_request.router,
     prefix="/api/v1/requests",
     tags=["Blood Requests"]
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )

@@ -1,105 +1,154 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.models.blood_request import BloodRequest
+from app.models.donor import Donor
+from app.models.enums import RequestStatus
 from app.schemas.blood_request import BloodRequestCreate
 from app.core.security import get_current_user
-from app.models.donor import Donor
-from app.core.security import get_current_user
-from fastapi import HTTPException
+from app.core.dependencies import require_role
+from app.services.blood_request import create_blood_request,get_donor_available_requests
+from app.services.matching_donor import get_matching_donors
+from app.services.update_request_status import update_request_status
+from app.db.dependencies import get_db
 
 router = APIRouter()
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+
+# ---------------- DB Dependency ----------------
 
 
+
+# ---------------- CREATE REQUEST ----------------
 @router.post("/create")
 def create_request(
     request: BloodRequestCreate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_role(["patient"]))
 ):
-    new_request = BloodRequest(
+    new_request = create_blood_request(
+        db=db,
         user_id=current_user["user_id"],
-        blood_group=request.blood_group,
-        location=request.location,
-        required_date=request.required_date
+        request=request
     )
 
-    db.add(new_request)
-    db.commit()
-
-    return {"message": "Blood request created"}
-
-
-from app.models.donor import Donor
+    return {
+        "id": new_request.id,
+        "message": "Blood request created"
+    }
 
 
+# ---------------- MATCH DONORS ----------------
 @router.get("/match/{request_id}")
 def match_donors(
     request_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    # Get the request
-    blood_request = db.query(BloodRequest).filter(BloodRequest.id == request_id).first()
+    blood_request = db.query(BloodRequest).filter(
+        BloodRequest.id == request_id
+    ).first()
 
     if not blood_request:
-        return {"error": "Request not found"}
+        raise HTTPException(status_code=404, detail="Request not found")
 
-    # Find matching donors
-    donors = db.query(Donor).filter(
-        Donor.blood_group == blood_request.blood_group,
-        Donor.location == blood_request.location,
-        Donor.is_available == True
-    ).all()
+    donors = get_matching_donors(db, blood_request)
 
     return {
-        "request": blood_request.id,
+        "request_id": blood_request.id,
+        "status": blood_request.status.value,
         "matching_donors": [
             {
                 "id": donor.id,
-                "location": donor.location,
-                "blood_group": donor.blood_group
+                "blood_group": donor.blood_group,
+                "location": donor.location
             }
             for donor in donors
         ]
     }
 
 
-@router.put("/update-status/{request_id}")
-def update_status(
-    request_id: int,
-    status: str,
+# ---------------- GET MY REQUESTS ----------------
+@router.get("/my")
+def get_my_requests(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    blood_request = db.query(BloodRequest).filter(BloodRequest.id == request_id).first()
+    user_id = current_user["user_id"]
 
-    if not blood_request:
-        raise HTTPException(status_code=404, detail="Request not found")
+    requests = db.query(BloodRequest).filter(
+        BloodRequest.user_id == user_id
+    ).all()
 
-    # Optional: only owner can update
-    if blood_request.user_id != current_user["user_id"]:
-        raise HTTPException(status_code=403, detail="Not allowed")
+    return {
+        "total": len(requests),
+        "requests": [
+            {
+                "id": req.id,
+                "blood_group": req.blood_group,
+                "location": req.location,
+                "status": req.status.value,
+                "assigned_donor_id": req.assigned_donor_id
+            }
+            for req in requests
+        ]
+    }
 
-    blood_request.status = status
-    db.commit()
 
-    if status == "completed":
-        donor = db.query(Donor).filter(
-            Donor.blood_group == blood_request.blood_group,
-            Donor.location == blood_request.location
-        ).first()
+# ---------------- DONOR REQUESTS ----------------
+@router.get("/donor")
+def get_donor_requests(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_role(["donor"]))
+):
+    donor, requests = get_donor_available_requests(db, current_user)
 
-        if donor:
-            donor.is_available = False
+    return {
+        "donor_id": donor.id,
+        "available_requests": [
+            {
+                "id": req.id,
+                "blood_group": req.blood_group,
+                "location": req.location,
+                "status": req.status.value
+            }
+            for req in requests
+        ]
+    }
 
-    db.commit()
 
-    return {"message": f"Request {status}"}
+# ---------------- UPDATE STATUS ----------------
+@router.put("/update-status/{request_id}")
+def update_status(
+    request_id: int,
+    status: RequestStatus,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    updated = update_request_status(db, request_id, status, current_user)
+
+    return {
+        "message": f"Request updated to {status.value}",
+        "assigned_donor_id": updated.assigned_donor_id
+    }
+
+@router.get("/admin")
+def get_all_requests(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_role(["admin"]))
+):
+    requests = db.query(BloodRequest).all()
+
+    return {
+        "total": len(requests),
+        "requests": [
+            {
+                "id": req.id,
+                "blood_group": req.blood_group,
+                "location": req.location,
+                "status": req.status.value,
+                "assigned_donor_id": req.assigned_donor_id
+            }
+            for req in requests
+        ]
+    }

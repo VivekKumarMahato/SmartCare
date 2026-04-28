@@ -9,20 +9,19 @@ from app.core.security import verify_password, create_access_token
 from fastapi import HTTPException
 from app.core.security import get_current_user
 from fastapi import Depends
+from app.models.enums import UserRole
+from app.db.dependencies import get_db
 router = APIRouter()
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+
 
 @router.post("/register")
 def register(user: UserCreate, db: Session = Depends(get_db)):
     db_user = User(
         email=user.email,
-        password=hash_password(user.password)
+        password=hash_password(user.password),
+        role=UserRole.patient
+
     )
     db.add(db_user)
     db.commit()
@@ -40,7 +39,8 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
 
     token = create_access_token({
         "sub": db_user.email,
-        "user_id": db_user.id
+        "user_id": db_user.id,
+        "role": db_user.role
     })
 
     return {
@@ -50,3 +50,4 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
 @router.get("/me")
 def get_me(current_user: dict = Depends(get_current_user)):
     return {"user": current_user}
+
