@@ -15,7 +15,7 @@ class BloodRequestCreate(BaseModel):
     @field_validator("blood_group", mode="before")
     def normalize_blood_group(cls, value):
         if isinstance(value, str):
-            return value.upper()
+            value = value.strip().upper()
         return value
 
 

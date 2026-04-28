@@ -13,7 +13,13 @@ class BloodRequest(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
 
-    blood_group = Column(SqlEnum(BloodGroup),nullable=False, index=True)
+    blood_group = Column(
+        SqlEnum(
+            BloodGroup,
+            values_callable=lambda obj: [e.value for e in obj]
+        ),
+        nullable=False
+    )
     location = Column(String)
     required_date = Column(Date)
     status = Column(SqlEnum(RequestStatus), default=RequestStatus.pending)
